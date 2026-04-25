@@ -1,0 +1,336 @@
+from flask import Flask, request, redirect, session, url_for, render_template_string, flash
+import webbrowser
+import threading
+
+app = Flask(__name__)
+app.secret_key = "eventsecret"
+
+events = []
+additional_forms = []
+
+users = {
+    "lavanya@gmail.com": {"name": "Lavanya", "password": "1234"},
+    "user@gmail.com": {"name": "User", "password": "1111"}
+}
+
+admin = {"email": "admin@gmail.com", "password": "admin123"}
+
+# ---------- COMMON STYLING ----------
+base_style = """
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(to right, #667eea, #764ba2);
+    margin: 0;
+    padding: 0;
+    color: white;
+    text-align: center;
+}
+.container {
+    width: 80%;
+    margin: auto;
+    margin-top: 40px;
+    background: rgba(0,0,0,0.3);
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 0 15px rgba(0,0,0,0.5);
+}
+input, select {
+    padding: 10px;
+    margin: 8px;
+    border-radius: 8px;
+    border: none;
+    width: 60%;
+}
+textarea {
+    width: 60%;
+    padding: 10px;
+    border-radius: 8px;
+}
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 10px;
+    background: #ff7eb3;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+}
+button:hover {
+    background: #ff4d88;
+}
+table {
+    margin: auto;
+    margin-top: 20px;
+    border-collapse: collapse;
+    width: 90%;
+    background: white;
+    color: black;
+    border-radius: 10px;
+    overflow: hidden;
+}
+th, td {
+    padding: 12px;
+    border-bottom: 1px solid #ddd;
+}
+th {
+    background: #764ba2;
+    color: white;
+}
+a {
+    color: #ffd369;
+    font-weight: bold;
+    text-decoration: none;
+}
+a:hover {
+    text-decoration: underline;
+}
+</style>
+"""
+
+# ---------- HOME ----------
+@app.route("/")
+def home():
+    html = base_style + """
+    <div class='container'>
+    <h1> Event Management System </h1>
+    <h3>Select Login</h3>
+    <a href='/user_login'>User Login</a><br><br>
+    <a href='/admin_login'>Admin Login</a>
+    </div>
+    """
+    return render_template_string(html)
+
+# ---------- USER LOGIN ----------
+@app.route("/user_login", methods=["GET", "POST"])
+def user_login():
+    if request.method == "POST":
+        email = request.form["email"]
+        password = request.form["password"]
+
+        if email in users and users[email]["password"] == password:
+            session["user"] = email
+            session["role"] = "user"
+            return redirect(url_for("dashboard"))
+        flash("Invalid Login")
+
+    html = base_style + """
+    <div class='container'>
+    <h2>User Login</h2>
+    <form method="POST">
+    <input type="email" name="email" placeholder="Enter Email"><br>
+    <input type="password" name="password" placeholder="Enter Password"><br>
+    <button>Login</button>
+    </form>
+    </div>
+    """
+    return render_template_string(html)
+
+# ---------- ADMIN LOGIN ----------
+@app.route("/admin_login", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "POST":
+        email = request.form["email"]
+        password = request.form["password"]
+
+        if email == admin["email"] and password == admin["password"]:
+            session["role"] = "admin"
+            return redirect(url_for("admin_dashboard"))
+        flash("Invalid Admin Login")
+
+    html = base_style + """
+    <div class='container'>
+    <h2>Admin Login</h2>
+    <form method="POST">
+    <input type="email" name="email" placeholder="Enter Email"><br>
+    <input type="password" name="password" placeholder="Enter Password"><br>
+    <button>Login</button>
+    </form>
+    </div>
+    """
+    return render_template_string(html)
+
+# ---------- USER DASHBOARD ----------
+@app.route("/dashboard")
+def dashboard():
+    if session.get("role") != "user":
+        return redirect(url_for("user_login"))
+
+    email = session["user"]
+    name = users[email]["name"]
+
+    user_events = [e for e in events if e["email"] == email]
+
+    html = base_style + """
+    <div class='container'>
+    <h2>Welcome {{name}}</h2>
+    <a href='/logout'>Logout</a>
+
+    <h3>Register For Event</h3>
+    <form method="POST" action="/register">
+    <select name="event">
+    <option>Tech Workshop</option>
+    <option>Hackathon</option>
+    <option>Seminar</option>
+    <option>Robotics Expo</option>
+    </select><br>
+    <input type="date" name="date"><br>
+    <input type="text" name="location" placeholder="Location"><br>
+    <button>Register</button>
+    </form>
+
+    <h3>Your Registered Events</h3>
+    <table>
+    <tr>
+    <th>Event</th>
+    <th>Date</th>
+    <th>Location</th>
+    </tr>
+    {% for e in user_events %}
+    <tr>
+    <td>{{e.event}}</td>
+    <td>{{e.date}}</td>
+    <td>{{e.location}}</td>
+    </tr>
+    {% endfor %}
+    </table>
+
+    <h3>Additional Information Form</h3>
+    <form method="POST" action="/additional_info">
+    <input type="text" name="phone" placeholder="Phone Number"><br>
+    <input type="text" name="college" placeholder="College Name"><br>
+    <textarea name="message" placeholder="Why are you interested?"></textarea><br>
+    <button>Submit Info</button>
+    </form>
+
+    </div>
+    """
+    return render_template_string(html, name=name, user_events=user_events)
+
+# ---------- REGISTER ----------
+@app.route("/register", methods=["POST"])
+def register():
+    if session.get("role") != "user":
+        return redirect(url_for("user_login"))
+
+    email = session["user"]
+    name = users[email]["name"]
+
+    event = request.form["event"]
+    date = request.form["date"]
+    location = request.form["location"]
+
+    events.append({
+        "email": email,
+        "participant": name,
+        "event": event,
+        "date": date,
+        "location": location
+    })
+
+    return redirect(url_for("dashboard"))
+
+# ---------- ADDITIONAL INFO ----------
+@app.route("/additional_info", methods=["POST"])
+def additional_info():
+    if session.get("role") != "user":
+        return redirect(url_for("user_login"))
+
+    email = session["user"]
+    name = users[email]["name"]
+
+    phone = request.form["phone"]
+    college = request.form["college"]
+    message = request.form["message"]
+
+    additional_forms.append({
+        "name": name,
+        "email": email,
+        "phone": phone,
+        "college": college,
+        "message": message
+    })
+
+    return redirect(url_for("dashboard"))
+
+# ---------- ADMIN DASHBOARD ----------
+@app.route("/admin_dashboard")
+def admin_dashboard():
+    if session.get("role") != "admin":
+        return redirect(url_for("admin_login"))
+
+    html = base_style + """
+    <div class='container'>
+    <h2>Admin Dashboard</h2>
+    <a href='/logout'>Logout</a>
+
+    <h3>All Event Registrations</h3>
+    <table>
+    <tr>
+    <th>Participant</th>
+    <th>Email</th>
+    <th>Event</th>
+    <th>Date</th>
+    <th>Location</th>
+    <th>Delete</th>
+    </tr>
+    {% for e in events %}
+    <tr>
+    <td>{{e.participant}}</td>
+    <td>{{e.email}}</td>
+    <td>{{e.event}}</td>
+    <td>{{e.date}}</td>
+    <td>{{e.location}}</td>
+    <td><a href="/delete/{{loop.index0}}">Delete</a></td>
+    </tr>
+    {% endfor %}
+    </table>
+
+    <h3>Additional Information Submitted</h3>
+    <table>
+    <tr>
+    <th>Name</th>
+    <th>Email</th>
+    <th>Phone</th>
+    <th>College</th>
+    <th>Message</th>
+    </tr>
+    {% for f in forms %}
+    <tr>
+    <td>{{f.name}}</td>
+    <td>{{f.email}}</td>
+    <td>{{f.phone}}</td>
+    <td>{{f.college}}</td>
+    <td>{{f.message}}</td>
+    </tr>
+    {% endfor %}
+    </table>
+
+    </div>
+    """
+    return render_template_string(html, events=events, forms=additional_forms)
+
+# ---------- DELETE ----------
+@app.route("/delete/<int:index>")
+def delete(index):
+    if session.get("role") != "admin":
+        return redirect(url_for("admin_login"))
+
+    if index < len(events):
+        del events[index]
+
+    return redirect(url_for("admin_dashboard"))
+
+# ---------- LOGOUT ----------
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("home"))
+
+# ---------- AUTO OPEN ----------
+def open_browser():
+    webbrowser.open_new("http://127.0.0.1:5000")
+
+if __name__ == "__main__":
+    threading.Timer(1, open_browser).start()
+    app.run(debug=True)
